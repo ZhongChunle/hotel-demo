@@ -1,4 +1,4 @@
-package constants;
+package cn.itcast.hotel.constants;
 
 /**
  * 项目名称：hotel-demo

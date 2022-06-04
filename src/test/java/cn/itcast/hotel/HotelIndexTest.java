@@ -14,7 +14,7 @@ import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
 
-import static constants.HotelConstants.MAPPING_TEMPLATE;
+import static cn.itcast.hotel.constants.HotelConstants.MAPPING_TEMPLATE;
 
 /**
  * 项目名称：hotel-demo
