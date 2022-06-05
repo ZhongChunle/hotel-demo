@@ -20,14 +20,23 @@ import org.elasticsearch.index.query.functionscore.FunctionScoreQueryBuilder;
 import org.elasticsearch.index.query.functionscore.ScoreFunctionBuilders;
 import org.elasticsearch.search.SearchHit;
 import org.elasticsearch.search.SearchHits;
+import org.elasticsearch.search.aggregations.AggregationBuilders;
+import org.elasticsearch.search.aggregations.Aggregations;
+import org.elasticsearch.search.aggregations.bucket.terms.Terms;
 import org.elasticsearch.search.sort.SortBuilders;
 import org.elasticsearch.search.sort.SortOrder;
+import org.elasticsearch.search.suggest.Suggest;
+import org.elasticsearch.search.suggest.SuggestBuilder;
+import org.elasticsearch.search.suggest.SuggestBuilders;
+import org.elasticsearch.search.suggest.completion.CompletionSuggestion;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 @Service
 public class HotelService extends ServiceImpl<HotelMapper, Hotel> implements IHotelService {
@@ -71,6 +80,139 @@ public class HotelService extends ServiceImpl<HotelMapper, Hotel> implements IHo
         } catch (IOException e) {
             throw new RuntimeException();
         }
+    }
+
+    /**
+     * 聚合结果返回
+     * @param params
+     * @return
+     */
+    @Override
+    public Map<String, List<String>> filters(RequestParams params) {
+        try {
+            // 1、准备
+            SearchRequest request = new SearchRequest("hotel");
+            // 2、准备DSL
+            // 2.1、调用聚合结果
+            buildBaicQuery(params, request);
+            // 2.2、设置查询的文档数
+            request.source().size(0);
+            // 2.3、调用封装的聚合查询条件
+            buildAggregation(request);
+            // 3、发送请求
+            SearchResponse response = client.search(request, RequestOptions.DEFAULT);
+            // 4、解析响应结果
+            Map<String, List<String>> result = new HashMap<>();
+            Aggregations aggregations = response.getAggregations();
+            // 4.1 根据匹配的名称获取匹配结果
+            List<String> brandList = getAggByName(aggregations,"brandAgg");
+            result.put("brand",brandList);
+            // 4.1 根据匹配的名称获取匹配结果
+            List<String> cityList = getAggByName(aggregations,"cityAgg");
+            result.put("city",cityList);
+            // 4.1 根据匹配的名称获取匹配结果
+            List<String> starList = getAggByName(aggregations,"starAgg");
+            result.put("starName",starList);
+            return result;
+        } catch (IOException e) {
+            throw new RuntimeException();
+        }
+    }
+
+    /**
+     * 实现前端关键字搜索
+     * @param key
+     * @return
+     */
+    @Override
+    public List<String> getSuggestion(String key) {
+        try {
+            // 1、准备额request
+            SearchRequest request = new SearchRequest("hotel");
+            // 2、准备DSL
+            request.source().suggest(
+                    new SuggestBuilder().addSuggestion(
+                            "suggestions",
+                            SuggestBuilders.completionSuggestion("suggestion")
+                                    .prefix(key)
+                                    .skipDuplicates(true)
+                                    .size(10)
+                    )
+            );
+            // 3、发送请求
+            SearchResponse response = client.search(request, RequestOptions.DEFAULT);
+            // 4.解析结果
+            Suggest suggest = response.getSuggest();
+            // 4.1.根据补全查询名称，获取补全结果
+            CompletionSuggestion suggestions = suggest.getSuggestion("suggestions");
+            // 4.2.获取options
+            List<CompletionSuggestion.Entry.Option> options = suggestions.getOptions();
+            // 4.3.遍历
+            List<String> list = new ArrayList<>(options.size());
+            for (CompletionSuggestion.Entry.Option option : options) {
+                String text = option.getText().toString();
+                list.add(text);
+            }
+            return list;
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+
+    }
+
+    /**
+     * 封装的聚合结果解析
+     * @param aggregations 获取到聚合数据
+     * @param aggName 指定的key值
+     * @return
+     */
+    private List<String> getAggByName(Aggregations aggregations,String aggName) {
+        // 4.1、根据聚合名称获取聚合结果
+        Terms brandTerms = aggregations.get(aggName);
+        // 4.2、获取buckets
+        List<? extends Terms.Bucket> buckets = brandTerms.getBuckets();
+        // 4.4、遍历结果集
+        List<String> brandList = new ArrayList<>();
+        for (Terms.Bucket bucket : buckets) {
+            // 获取key
+            String key = bucket.getKeyAsString();
+            brandList.add(key);
+        }
+        return brandList;
+    }
+
+    /**
+     * 封装聚合查询条件
+     * @param request
+     */
+    private void buildAggregation(SearchRequest request) {
+        request.source().aggregation(
+                AggregationBuilders
+                        // 名称
+                        .terms("brandAgg")
+                        // 字段
+                        .field("brand")
+                        // 数量
+                        .size(100)
+        );
+        request.source().aggregation(
+                AggregationBuilders
+                        // 名称
+                        .terms("cityAgg")
+                        // 字段
+                        .field("city")
+                        // 数量
+                        .size(100)
+        );
+        request.source().aggregation(
+                AggregationBuilders
+                        // 名称
+                        .terms("starAgg")
+                        // 字段
+                        .field("starName")
+                        // 数量
+                        .size(100)
+        );
     }
 
     /**
